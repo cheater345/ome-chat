@@ -50,7 +50,7 @@ init_db()
 @app.route("/")
 def home():
     if "user" not in session:
-        return redirect("/login")
+        return redirect("/register")
     return render_template("index.html")
 
 
