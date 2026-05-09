@@ -58,7 +58,9 @@ users_online = {}
 # ================= ROUTES =================
 @app.route("/")
 def home():
-    return redirect("/register")  # REGISTER BUNGAD
+    if "user" in session:
+        return render_template("index.html")
+    return redirect("/register")
 
 
 @app.route("/login", methods=["GET","POST"])
