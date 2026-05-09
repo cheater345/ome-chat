@@ -4,6 +4,7 @@ import sqlite3
 from werkzeug.security import generate_password_hash, check_password_hash
 from collections import deque
 import threading
+import re
 
 app = Flask(__name__)
 app.secret_key = "change_this_secret"
@@ -11,6 +12,14 @@ app.secret_key = "change_this_secret"
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 lock = threading.Lock()
+
+# ================= VALIDATION =================
+def is_valid_email(email):
+    return re.match(r"^[^@]+@[^@]+\.[^@]+$", email)
+
+def strong_password(pw):
+    return len(pw) >= 6
+
 
 # ================= DB =================
 def db():
@@ -55,6 +64,7 @@ normal_waiting = deque()
 partners = {}
 users_online = {}
 
+
 # ================= ROUTES =================
 @app.route("/")
 def home():
@@ -81,7 +91,8 @@ def login():
             session["gender"] = user["gender"]
             session["admin"] = user["is_admin"]
             return redirect("/")
-        return "Wrong login"
+
+        return "Invalid email or password"
 
     return render_template("login.html")
 
@@ -91,19 +102,40 @@ def register():
     if request.method == "POST":
         username = request.form["username"]
         email = request.form["email"]
-        password = generate_password_hash(request.form["password"])
+        password_raw = request.form["password"]
         gender = request.form["gender"]
 
-        conn = db()
-        c = conn.cursor()
-        c.execute("""
-        INSERT INTO users (username,email,password,gender)
-        VALUES (?,?,?,?)
-        """, (username,email,password,gender))
-        conn.commit()
-        conn.close()
+        # ================= VALIDATION =================
+        if not is_valid_email(email):
+            return "Invalid email format"
 
-        return redirect("/login")
+        if not strong_password(password_raw):
+            return "Password must be at least 6 characters"
+
+        password = generate_password_hash(password_raw)
+
+        try:
+            conn = db()
+            c = conn.cursor()
+
+            c.execute("""
+            INSERT INTO users (username,email,password,gender)
+            VALUES (?,?,?,?)
+            """, (username,email,password,gender))
+
+            conn.commit()
+            conn.close()
+
+            # ================= AUTO LOGIN =================
+            session["user"] = email
+            session["premium"] = 0
+            session["gender"] = gender
+            session["admin"] = 0
+
+            return redirect("/")
+
+        except sqlite3.IntegrityError:
+            return "User already exists"
 
     return render_template("register.html")
 
@@ -140,20 +172,18 @@ def join():
 
     with lock:
 
-        # remove duplicates
         if sid in premium_waiting:
             premium_waiting.remove(sid)
         if sid in normal_waiting:
             normal_waiting.remove(sid)
 
-        # remove old partner
         if sid in partners:
             partner = partners.pop(sid)
             partners.pop(partner, None)
 
         partner = None
 
-        # PRIORITY MATCHING
+        # PREMIUM PRIORITY MATCH
         if premium_waiting:
             partner = premium_waiting.popleft()
         elif normal_waiting:
