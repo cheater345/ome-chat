@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Processing Payment</title>
+
+<style>
+
+body{
+margin:0;
+background:#0a0a0a;
+color:white;
+font-family:Arial;
+display:flex;
+justify-content:center;
+align-items:center;
+height:100vh;
+}
+
+.card{
+background:#1c1c1c;
+padding:25px;
+border-radius:15px;
+text-align:center;
+width:85%;
+max-width:350px;
+box-shadow:0 0 20px rgba(0,255,255,.2);
+}
+
+.loader{
+width:50px;
+height:50px;
+border:5px solid #333;
+border-top:5px solid gold;
+border-radius:50%;
+margin:15px auto;
+animation:spin 1s linear infinite;
+}
+
+@keyframes spin{
+0%{transform:rotate(0)}
+100%{transform:rotate(360deg)}
+}
+
+.ref{
+background:#000;
+padding:10px;
+border-radius:10px;
+margin-top:10px;
+font-size:14px;
+color:#0ff;
+}
+
+small{
+opacity:.7;
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="card">
+
+<h2>💳 Payment Submitted</h2>
+
+<div class="loader"></div>
+
+<p>Your GCash reference is:</p>
+
+<div class="ref">{{ref}}</div>
+
+<h3>Processing...</h3>
+
+<small>
+It will take 2–4 hours to approve your premium account
+</small>
+
+</div>
+
+</body>
+</html>

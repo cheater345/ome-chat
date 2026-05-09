@@ -1,0 +1,519 @@
+<!-- templates/index.html -->
+
+<!DOCTYPE html>
+<html>
+<head>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Video Chat</title>
+
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+
+<style>
+
+body{
+margin:0;
+background:black;
+font-family:Arial;
+overflow:hidden;
+color:white;
+}
+
+video{
+width:100%;
+height:45vh;
+object-fit:cover;
+background:black;
+transition:.4s;
+}
+
+/* TOP FILTER */
+#topbar{
+position:fixed;
+top:0;
+width:100%;
+padding:5px;
+background:rgba(0,0,0,.5);
+backdrop-filter:blur(10px);
+z-index:10;
+}
+
+select{
+width:100%;
+padding:10px;
+border:none;
+border-radius:10px;
+background:#111;
+color:white;
+}
+
+/* STATUS */
+#status{
+position:fixed;
+top:55px;
+width:100%;
+text-align:center;
+font-size:13px;
+z-index:10;
+}
+
+/* CHAT */
+#chat{
+position:fixed;
+bottom:70px;
+width:100%;
+height:30vh;
+display:flex;
+flex-direction:column;
+pointer-events:none;
+}
+
+#msgs{
+flex:1;
+overflow-y:auto;
+padding:10px;
+}
+
+.msg{
+background:rgba(0,0,0,.35);
+padding:7px 12px;
+border-radius:10px;
+margin:5px;
+display:inline-block;
+backdrop-filter:blur(5px);
+}
+
+#input{
+display:flex;
+pointer-events:auto;
+}
+
+#input input{
+flex:1;
+padding:10px;
+border:none;
+outline:none;
+background:rgba(255,255,255,.1);
+color:white;
+}
+
+#input button{
+padding:10px;
+border:none;
+background:#00bcd4;
+color:white;
+}
+
+/* CONTROLS */
+.controls{
+position:fixed;
+bottom:0;
+width:100%;
+display:flex;
+gap:5px;
+padding:7px;
+background:rgba(0,0,0,.6);
+backdrop-filter:blur(10px);
+}
+
+button{
+flex:1;
+padding:10px;
+border:none;
+border-radius:10px;
+font-weight:bold;
+color:white;
+}
+
+.next{
+background:#00bcd4;
+}
+
+.stop{
+background:#f44336;
+}
+
+.gcash{
+background:gold;
+color:black;
+}
+
+/* MODAL */
+#gcashModal{
+display:none;
+position:fixed;
+top:0;
+left:0;
+width:100%;
+height:100%;
+background:rgba(0,0,0,.9);
+justify-content:center;
+align-items:center;
+z-index:100;
+}
+
+.box{
+background:#222;
+padding:20px;
+border-radius:15px;
+width:80%;
+}
+
+.box input{
+width:100%;
+padding:10px;
+margin-top:10px;
+border:none;
+border-radius:10px;
+}
+
+.box button{
+width:100%;
+margin-top:10px;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div id="topbar">
+
+<select id="filter" onchange="setFilter()">
+<option value="all">All</option>
+<option value="boy">Boy (Premium)</option>
+<option value="girl">Girl (Premium)</option>
+</select>
+
+</div>
+
+<div id="status">Searching...</div>
+
+<video id="remote" autoplay playsinline></video>
+<video id="local" autoplay muted playsinline></video>
+
+<!-- CHAT -->
+<div id="chat">
+
+<div id="msgs"></div>
+
+<div id="input">
+<input id="msg" placeholder="Message...">
+<button onclick="sendMsg()">Send</button>
+</div>
+
+</div>
+
+<!-- BUTTONS -->
+<div class="controls">
+
+<button class="next" onclick="nextUser()">Next</button>
+
+<button class="stop" onclick="stopUser()">Stop</button>
+
+<button class="gcash" onclick="openGCash()">GCash</button>
+
+</div>
+
+<!-- GCASH -->
+<div id="gcashModal">
+
+<div class="box">
+
+<form method="POST" action="/buy-premium">
+
+<h3>GCash Reference</h3>
+
+<h3>Send 100 pesos to this no.09945549184</h3>
+
+<input
+name="reference"
+placeholder="Enter GCash ref"
+required
+>
+
+<button>Submit</button>
+
+</form>
+
+<button onclick="closeGCash()" style="background:red">
+Close
+</button>
+
+</div>
+
+</div>
+
+<script>
+
+const socket = io();
+
+let stream;
+let pc;
+let premium=false;
+
+/* CAMERA */
+
+async function startCamera(){
+
+stream = await navigator.mediaDevices.getUserMedia({
+video:true,
+audio:true
+});
+
+document.getElementById("local").srcObject = stream;
+
+}
+
+startCamera();
+
+/* PREMIUM */
+
+function checkPremium(){
+
+fetch("/get-premium")
+.then(r=>r.json())
+.then(data=>{
+
+premium = data.premium == 1;
+
+});
+
+}
+
+checkPremium();
+
+/* FILTER */
+
+function setFilter(){
+
+if(!premium){
+
+alert("Premium only");
+
+document.getElementById("filter").value="all";
+
+return;
+
+}
+
+socket.emit("setFilter",{
+gender:document.getElementById("filter").value
+});
+
+}
+
+/* MATCHED */
+
+socket.on("matched", async(data)=>{
+
+document.getElementById("status").innerText="Connected";
+
+pc = new RTCPeerConnection({
+iceServers:[
+{
+urls:"stun:stun.l.google.com:19302"
+}
+]
+});
+
+/* SEND TRACKS */
+
+stream.getTracks().forEach(track=>{
+pc.addTrack(track, stream);
+});
+
+/* REMOTE VIDEO */
+
+pc.ontrack = (e)=>{
+
+document.getElementById("remote").srcObject = e.streams[0];
+
+};
+
+/* ICE */
+
+pc.onicecandidate = (e)=>{
+
+if(e.candidate){
+
+socket.emit("signal",{
+ice:e.candidate
+});
+
+}
+
+};
+
+/* CALLER */
+
+if(data.role == "caller"){
+
+const offer = await pc.createOffer();
+
+await pc.setLocalDescription(offer);
+
+socket.emit("signal",{
+sdp:pc.localDescription
+});
+
+}
+
+});
+
+/* SIGNAL */
+
+socket.on("signal", async(data)=>{
+
+if(!pc) return;
+
+/* SDP */
+
+if(data.sdp){
+
+await pc.setRemoteDescription(
+new RTCSessionDescription(data.sdp)
+);
+
+if(data.sdp.type == "offer"){
+
+const answer = await pc.createAnswer();
+
+await pc.setLocalDescription(answer);
+
+socket.emit("signal",{
+sdp:pc.localDescription
+});
+
+}
+
+}
+
+/* ICE */
+
+if(data.ice){
+
+try{
+
+await pc.addIceCandidate(data.ice);
+
+}catch(e){}
+
+}
+
+});
+
+/* CHAT */
+
+socket.on("msg",(msg)=>{
+
+addMsg("Stranger", msg);
+
+});
+
+function sendMsg(){
+
+let msg=document.getElementById("msg").value;
+
+if(msg=="") return;
+
+socket.emit("msg", msg);
+
+addMsg("You", msg);
+
+document.getElementById("msg").value="";
+
+}
+
+function addMsg(user,msg){
+
+let div=document.createElement("div");
+
+div.className="msg";
+
+div.innerHTML="<b>"+user+":</b> "+msg;
+
+document.getElementById("msgs").appendChild(div);
+
+}
+
+/* NEXT */
+
+function nextUser(){
+
+if(pc){
+pc.close();
+pc=null;
+}
+
+document.getElementById("remote").srcObject=null;
+
+document.getElementById("msgs").innerHTML="";
+
+socket.emit("next");
+socket.emit("join");
+
+document.getElementById("status").innerText="Searching...";
+
+}
+
+/* STOP */
+
+function stopUser(){
+
+if(pc){
+pc.close();
+pc=null;
+}
+
+document.getElementById("remote").srcObject=null;
+
+document.getElementById("msgs").innerHTML="";
+
+socket.emit("next");
+
+document.getElementById("status").innerText="Stopped";
+
+}
+
+/* END */
+
+socket.on("end",()=>{
+
+if(pc){
+pc.close();
+pc=null;
+}
+
+document.getElementById("remote").srcObject=null;
+
+document.getElementById("msgs").innerHTML="";
+
+document.getElementById("status").innerText="Searching...";
+
+});
+
+/* GCASH */
+
+function openGCash(){
+
+document.getElementById("gcashModal").style.display="flex";
+
+}
+
+function closeGCash(){
+
+document.getElementById("gcashModal").style.display="none";
+
+}
+
+/* START */
+
+socket.emit("join");
+
+</script>
+
+</body>
+</html>

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Register</title>
+
+<style>
+
+body{
+margin:0;
+background:#0a0a0a;
+font-family:Arial;
+display:flex;
+justify-content:center;
+align-items:center;
+height:100vh;
+color:white;
+}
+
+.box{
+background:#1c1c1c;
+padding:25px;
+border-radius:15px;
+width:85%;
+max-width:350px;
+box-shadow:0 0 25px rgba(0,255,255,.1);
+}
+
+h2{
+text-align:center;
+margin-bottom:20px;
+}
+
+input,select{
+width:100%;
+padding:12px;
+margin-top:10px;
+border:none;
+border-radius:10px;
+background:#111;
+color:white;
+outline:none;
+box-sizing:border-box;
+}
+
+button{
+width:100%;
+padding:12px;
+margin-top:15px;
+border:none;
+border-radius:10px;
+background:#00bcd4;
+color:white;
+font-weight:bold;
+font-size:15px;
+cursor:pointer;
+}
+
+button:hover{
+opacity:.9;
+}
+
+a{
+color:#00bcd4;
+text-decoration:none;
+}
+
+.small{
+text-align:center;
+margin-top:15px;
+font-size:14px;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<form class="box" method="POST">
+
+<h2>Create Account</h2>
+
+<input
+name="username"
+placeholder="Username"
+required
+>
+
+<input
+name="email"
+type="email"
+placeholder="Email"
+required
+>
+
+<input
+name="password"
+type="password"
+placeholder="Password"
+required
+>
+
+<!-- GENDER SELECT -->
+<select name="gender" required>
+
+<option value="">Select Gender</option>
+
+<option value="Male">Male</option>
+
+<option value="Female">Female</option>
+
+</select>
+
+<button>Create Account</button>
+
+<div class="small">
+Already have account?
+<a href="/login">Login</a>
+</div>
+
+</form>
+
+</body>
+</html>
