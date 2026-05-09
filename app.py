@@ -1,12 +1,16 @@
-from flask import Flask, render_template, request, session, redirect, jsonify
+from flask import Flask, render_template, request, session, redirect
 from flask_socketio import SocketIO, emit
 import sqlite3
 from werkzeug.security import generate_password_hash, check_password_hash
+from collections import deque
+import threading
 
 app = Flask(__name__)
-app.secret_key = "hosojsjskshvksjsv"
+app.secret_key = "change_this_secret"
 
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+lock = threading.Lock()
 
 # ================= DB =================
 def db():
@@ -45,13 +49,16 @@ def init_db():
 
 init_db()
 
+# ================= QUEUES =================
+premium_waiting = deque()
+normal_waiting = deque()
+partners = {}
+users_online = {}
 
 # ================= ROUTES =================
 @app.route("/")
 def home():
-    if "user" not in session:
-        return redirect("/register")
-    return render_template("index.html")
+    return redirect("/register")  # REGISTER BUNGAD
 
 
 @app.route("/login", methods=["GET","POST"])
@@ -99,40 +106,10 @@ def register():
     return render_template("register.html")
 
 
-# ================= GCASH =================
-@app.route("/buy-premium", methods=["POST"])
-def buy_premium():
-    if "user" not in session:
-        return redirect("/login")
-
-    ref = request.form["reference"]
-
-    conn = db()
-    c = conn.cursor()
-    c.execute("""
-    INSERT INTO payments (user_email, ref_code, status)
-    VALUES (?,?,?)
-    """, (session["user"], ref, "pending"))
-    conn.commit()
-    conn.close()
-
-    return redirect("/processing")
-
-
-@app.route("/processing")
-def processing():
-    return render_template("processingpay.html")
-
-
-# ================= SOCKET MATCH SYSTEM =================
-waiting = []
-partners = {}
-users_online = {}
-
-
+# ================= SOCKET =================
 @socketio.on("connect")
 def connect():
-    users_online[request.sid] = session.get("user")
+    users_online[request.sid] = True
 
 
 @socketio.on("disconnect")
@@ -141,39 +118,63 @@ def disconnect():
 
     users_online.pop(sid, None)
 
-    if sid in waiting:
-        waiting.remove(sid)
+    with lock:
+        if sid in premium_waiting:
+            premium_waiting.remove(sid)
+        if sid in normal_waiting:
+            normal_waiting.remove(sid)
 
-    if sid in partners:
-        p = partners[sid]
-        emit("partner_left", room=p)
-        partners.pop(p, None)
-        partners.pop(sid, None)
+        if sid in partners:
+            partner = partners.pop(sid)
+            partners.pop(partner, None)
+            emit("partner_left", room=partner)
 
 
-# ================= FIXED MATCHING =================
+# ================= MATCH SYSTEM =================
 @socketio.on("join")
 def join():
     sid = request.sid
+    is_premium = session.get("premium", 0)
 
-    if sid in waiting:
-        waiting.remove(sid)
+    with lock:
 
-    if waiting:
-        partner = waiting.pop(0)
+        # remove duplicates
+        if sid in premium_waiting:
+            premium_waiting.remove(sid)
+        if sid in normal_waiting:
+            normal_waiting.remove(sid)
 
-        partners[sid] = partner
-        partners[partner] = sid
+        # remove old partner
+        if sid in partners:
+            partner = partners.pop(sid)
+            partners.pop(partner, None)
 
-        emit("matched", {"role": "caller"}, room=sid)
-        emit("matched", {"role": "callee"}, room=partner)
-    else:
-        waiting.append(sid)
+        partner = None
+
+        # PRIORITY MATCHING
+        if premium_waiting:
+            partner = premium_waiting.popleft()
+        elif normal_waiting:
+            partner = normal_waiting.popleft()
+
+        if partner and partner != sid:
+            partners[sid] = partner
+            partners[partner] = sid
+
+            emit("matched", {"role": "caller"}, room=sid)
+            emit("matched", {"role": "callee"}, room=partner)
+
+        else:
+            if is_premium:
+                premium_waiting.append(sid)
+            else:
+                normal_waiting.append(sid)
 
 
 @socketio.on("signal")
 def signal(data):
     sid = request.sid
+
     if sid in partners:
         emit("signal", data, room=partners[sid])
 
@@ -181,56 +182,24 @@ def signal(data):
 @socketio.on("next")
 def next_user():
     sid = request.sid
+    is_premium = session.get("premium", 0)
 
-    if sid in partners:
-        p = partners[sid]
-        emit("partner_left", room=p)
-        partners.pop(p, None)
-        partners.pop(sid, None)
+    with lock:
 
-    if sid in waiting:
-        waiting.remove(sid)
+        if sid in partners:
+            partner = partners.pop(sid)
+            partners.pop(partner, None)
+            emit("partner_left", room=partner)
 
-    waiting.append(sid)
+        if sid in premium_waiting:
+            premium_waiting.remove(sid)
+        if sid in normal_waiting:
+            normal_waiting.remove(sid)
 
-
-# ================= ADMIN =================
-@app.route("/admin")
-def admin():
-    if not session.get("admin"):
-        return redirect("/login")
-
-    conn = db()
-    c = conn.cursor()
-    c.execute("SELECT * FROM payments ORDER BY id DESC")
-    payments = c.fetchall()
-    conn.close()
-
-    return render_template("admin.html", payments=payments)
-
-
-@app.route("/approve/<int:id>")
-def approve(id):
-    conn = db()
-    c = conn.cursor()
-
-    c.execute("UPDATE payments SET status='approved' WHERE id=?", (id,))
-    conn.commit()
-    conn.close()
-
-    return redirect("/admin")
-
-
-@app.route("/reject/<int:id>")
-def reject(id):
-    conn = db()
-    c = conn.cursor()
-
-    c.execute("UPDATE payments SET status='rejected' WHERE id=?", (id,))
-    conn.commit()
-    conn.close()
-
-    return redirect("/admin")
+        if is_premium:
+            premium_waiting.append(sid)
+        else:
+            normal_waiting.append(sid)
 
 
 # ================= RUN =================
